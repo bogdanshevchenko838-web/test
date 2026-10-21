@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: flightlab-github-pages
@@ -36,3 +37,12 @@ jobs:
           folder: dist-offline
           clean: true
           single-commit: false
+      - name: Request a Pages build when Pages is enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" --silent; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" --silent
+          else
+            echo "::notice::Site files are on gh-pages. Enable Settings > Pages > Deploy from a branch > gh-pages > / (root)."
+          fi
