@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-offline/
+releases/
+playwright-report/
+test-results/
+*.bbl
+*.bfl
+*.BBL
+*.BFL
+.env
+.env.*

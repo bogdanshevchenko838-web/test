@@ -1,0 +1,73 @@
+import { test, expect } from '@playwright/test';
+import { binaryFlight } from '../fixtures.js';
+
+test('demo, pilot preferences, saved craft profiles and isolated browser storage', async ({ page, browser }) => {
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Загрузи Blackbox полёта' })).toBeVisible();
+  await page.screenshot({ path: '/tmp/flightlab-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Открыть демо' }).click();
+  await expect(page.getByRole('heading', { name: 'Что поправить' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Roll: выраженный пик 180/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Плавный', exact: false }).click();
+  await expect(page.getByRole('heading', { name: 'Цель: плавный отклик' })).toBeVisible();
+  await page.getByRole('button', { name: 'С грузом', exact: true }).click();
+  await page.getByLabel('Взлётная масса, г').fill('900');
+  await page.getByLabel('Масса груза, г').fill('200');
+  await expect(page.getByText(/взлётная масса 900 г/)).toBeVisible();
+  await page.getByLabel('Название', { exact: true }).fill('Кино с камерой');
+  await page.getByRole('button', { name: 'Сохранить профиль' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Профиль сохранён' })).toBeVisible();
+  await page.getByLabel('Сохранённые борта').selectOption('');
+  await page.getByLabel('Название', { exact: true }).fill('Лёгкий фристайл');
+  await page.getByRole('button', { name: 'Резкий', exact: false }).click();
+  await page.getByRole('button', { name: 'Сохранить профиль' }).click();
+  await page.getByLabel('Сохранённые борта').selectOption({ label: 'Кино с камерой' });
+  await expect(page.getByLabel('Взлётная масса, г')).toHaveValue('900');
+  await expect(page.getByRole('button', { name: 'Плавный', exact: false })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(page.getByLabel('Сохранённые борта').getByRole('option')).toHaveCount(3);
+  const otherContext = await browser.newContext();
+  const otherPage = await otherContext.newPage();
+  await otherPage.goto('http://127.0.0.1:5173');
+  await expect(otherPage.getByLabel('Сохранённые борта')).toHaveCount(0);
+  await otherContext.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test('native log, confirmed configuration, candidate, export, reset and errors', async ({ page }) => {
+  await page.goto('/');
+  const log = { name: 'flight.bbl', mimeType: 'application/octet-stream', buffer: Buffer.from(binaryFlight()) };
+  await page.getByLabel('Загрузить Blackbox', { exact: true }).setInputFiles(log);
+  await expect(page.getByRole('heading', { name: 'Что поправить' })).toBeVisible();
+  await page.getByLabel('Загрузить CLI конфигурацию').setInputFiles({ name: 'dump.txt', mimeType: 'text/plain', buffer: Buffer.from('# Betaflight / STM32F405 4.5.2\nset simplified_dterm_filter = OFF\nset dterm_lpf1_type = PT1\nset dterm_lpf1_dyn_min_hz = 100\nset dterm_lpf1_dyn_max_hz = 200') });
+  await expect(page.getByText('Кандидат для контрольного полёта', { exact: true })).toHaveCount(0);
+  await page.getByRole('checkbox').check();
+  await expect(page.getByText('Кандидат для контрольного полёта', { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Отчёт', exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('flightlab-report.json');
+  await page.getByLabel('Начало интервала').fill('2');
+  await page.getByLabel('Конец интервала').fill('1');
+  await page.getByRole('button', { name: 'Применить' }).click();
+  await expect(page.getByRole('alert')).toContainText('Укажи интервал');
+  await page.getByLabel('Загрузить Blackbox', { exact: true }).setInputFiles(log);
+  await expect(page.getByRole('heading', { name: 'Что поправить' })).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await page.getByLabel('Загрузить Blackbox', { exact: true }).setInputFiles({ name: 'bad.bbl', mimeType: 'application/octet-stream', buffer: Buffer.from('garbage') });
+  await expect(page.getByRole('alert')).toContainText('Заголовок Blackbox не найден');
+});
+
+test('mobile has no horizontal overflow and supports analysis', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Открыть демо' }).click();
+  await expect(page.getByRole('heading', { name: 'Что поправить' })).toBeVisible();
+  await page.getByRole('button', { name: 'Спектр вибраций' }).click();
+  await expect(page.getByRole('img', { name: /Частота, Гц/ })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/flightlab-mobile.png', fullPage: true });
+});
